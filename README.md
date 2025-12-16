@@ -1,4 +1,6 @@
 # Planetary Rotation Calculator
+![Screenshot of the tool](screenshot.png)
+
 
 A browser-based rotation and relative-position calculation tool.
 
