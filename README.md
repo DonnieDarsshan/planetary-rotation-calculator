@@ -5,7 +5,8 @@ A browser-based rotation and relative-position calculation tool.
 ---
 
 ## Live Demo
-(Will be enabled using GitHub Pages)
+https://donniedarsshan.github.io/planetary-rotation-calculator/
+
 
 ---
 
