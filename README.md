@@ -1,14 +1,12 @@
 # Planetary Rotation Calculator
-![Screenshot of the tool](Screenshot.png)
-
-
 A browser-based rotation and relative-position calculation tool.
+
+## Live Application
+https://donniedarsshan.github.io/planetary-rotation-calculator/
 
 ---
 
-## Live Demo
-https://donniedarsshan.github.io/planetary-rotation-calculator/
-
+![Screenshot of the tool](Screenshot.png)
 
 ---
 
