@@ -6,40 +6,16 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <style>
-  body {
-    background: #0f172a;
-    color: #e5e7eb;
-    font-family: Arial, sans-serif;
-    padding: 20px;
-  }
-  h1 {
-    font-size: 22px;
-    margin-bottom: 10px;
-  }
-  select, button {
-    background: #020617;
-    color: #e5e7eb;
-    border: 1px solid #334155;
-    padding: 4px 8px;
-    margin-right: 6px;
-  }
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 12px;
-  }
-  th, td {
-    border: 1px solid #334155;
-    padding: 6px;
-    text-align: center;
-  }
-  th {
-    background: #020617;
-  }
-  select.deg-disabled {
-    opacity: 0.4;
-    pointer-events: none;
-  }
+  body{background:#0f172a;color:#e5e7eb;font-family:Arial,sans-serif;padding:20px}
+  h1{font-size:22px;margin-bottom:10px}
+  select,button{background:#020617;color:#e5e7eb;border:1px solid #334155;padding:4px 8px;margin-right:6px}
+  table{width:100%;border-collapse:collapse;margin-top:12px}
+  th,td{border:1px solid #334155;padding:6px;text-align:center}
+  th{background:#020617}
+  select.deg-disabled{opacity:.4;pointer-events:none}
+  .aspect-good{color:#22c55e;font-weight:600}
+  .aspect-bad{color:#ef4444;font-weight:600}
+  .aspect-neutral{color:#e5e7eb;font-weight:600}
 </style>
 </head>
 
@@ -51,25 +27,14 @@
   Rotate from:
   <select id="pivotSelect"></select>
 
-  <label>
-    <input type="checkbox" id="ignoreDegrees">
-    Ignore Degrees
-  </label>
+  <label><input type="checkbox" id="ignoreDegrees"> Ignore Degrees</label>
+  <label><input type="checkbox" id="reverseCounting"> Retro</label>
+  <label><input type="checkbox" id="legacyOppConj" checked> Subtract 180°</label>
+  <label><input type="checkbox" id="showRawDegrees"> (0–360)</label>
+  <label><input type="checkbox" id="pivotRowFromLagna" checked> Actual Position</label>
 
-  <label>
-    <input type="checkbox" id="reverseCounting">
-    Reverse Counting (Retrograde)
-  </label>
-
-  <label>
-    <input type="radio" name="houseSystem" value="KP">
-    KP
-  </label>
-
-  <label>
-    <input type="radio" name="houseSystem" value="Vedic" checked>
-    Vedic
-  </label>
+  <label><input type="radio" name="houseSystem" value="KP"> KP</label>
+  <label><input type="radio" name="houseSystem" value="Vedic" checked> Vedic</label>
 
   <button id="clearBtn">Clear All</button>
   <button id="saveBtn">Save Chart</button>
@@ -84,228 +49,267 @@
   <th>Sign</th>
   <th>Degree</th>
   <th>House</th>
+  <th>Degree Difference</th>
+  <th>Aspect</th>
 </tr>
 </thead>
 <tbody id="tableBody"></tbody>
 </table>
 
 <script>
-/* ======================= LOCKED LOGIC ZONE ======================= */
+const SIGNS=["Aries","Taurus","Gemini","Cancer","Leo","Virgo","Libra","Scorpio","Sagittarius","Capricorn","Aquarius","Pisces"];
+const PLANETS=["Lagna","Surya","Chandra","Mangala","Rahu","Jupiter","Saturn","Budha","Ketu","Venus"];
 
-const SIGNS = [
-  "Aries","Taurus","Gemini","Cancer","Leo","Virgo",
-  "Libra","Scorpio","Sagittarius","Capricorn","Aquarius","Pisces"
-];
+const BENEFIC_PLANETS=["Jupiter","Venus","Budha","Chandra"];
+const MALEFIC_PLANETS=["Saturn","Mangala","Rahu","Ketu","Surya"];
 
-const PLANETS = [
-  "Lagna","Surya","Chandra","Mangala","Rahu",
-  "Jupiter","Saturn","Budha","Ketu","Venus"
-];
+const data={}; PLANETS.forEach(p=>data[p]={sign:"",degree:""});
 
-const data = {};
-PLANETS.forEach(p => data[p] = { sign:"", degree:"" });
+const pivotSelect=document.getElementById("pivotSelect");
+const tableBody=document.getElementById("tableBody");
+const ignoreDegreesChk=document.getElementById("ignoreDegrees");
+const reverseChk=document.getElementById("reverseCounting");
+const legacyOppConjChk=document.getElementById("legacyOppConj");
+const showRawDegreesChk=document.getElementById("showRawDegrees");
+const pivotRowChk=document.getElementById("pivotRowFromLagna");
+const fileInput=document.getElementById("fileInput");
 
-const pivotSelect = document.getElementById("pivotSelect");
-const tableBody = document.getElementById("tableBody");
-const ignoreDegreesChk = document.getElementById("ignoreDegrees");
-const reverseChk = document.getElementById("reverseCounting");
+let ignoreDegrees=false;
+let houseSystem="Vedic";
+let reverseCounting=false;
+let pivotRowFromLagna=true;
+let legacyOppConj=true;
+let showRawDegrees=false;
+let currentAspectPlanet="";
 
-let ignoreDegrees = false;
-let houseSystem = "Vedic";
-let reverseCounting = false;
-
-/* Pivot dropdown */
-PLANETS.forEach(p => {
-  const opt = document.createElement("option");
-  opt.value = p;
-  opt.textContent = p;
-  pivotSelect.appendChild(opt);
+PLANETS.forEach(p=>{
+  const o=document.createElement("option");
+  o.value=p;o.textContent=p;
+  pivotSelect.appendChild(o);
 });
+pivotSelect.value="Lagna";
 
-/* Build table */
-function buildTable() {
-  tableBody.innerHTML = "";
-
-  const startIndex = PLANETS.indexOf(pivotSelect.value);
-  const orderedPlanets = startIndex === -1
-    ? PLANETS
-    : [...PLANETS.slice(startIndex), ...PLANETS.slice(0, startIndex)];
-
-  orderedPlanets.forEach(planet => {
-    if (pivotSelect.value !== "Lagna" && planet === "Lagna") return;
-
-    const tr = document.createElement("tr");
-
-    tr.innerHTML = `
-      <td>${planet}</td>
-      <td>
-        <select data-p="${planet}" data-t="sign">
-          <option value=""></option>
-          ${SIGNS.map(s=>`<option>${s}</option>`).join("")}
-        </select>
-      </td>
-      <td>
-        <select data-p="${planet}" data-t="deg">
-          <option value=""></option>
-          ${Array.from({length:30},(_,i)=>`<option>${i}</option>`).join("")}
-        </select>
-      </td>
-      <td id="out_${planet}"></td>
-    `;
+function buildTable(){
+  tableBody.innerHTML="";
+  const start=PLANETS.indexOf(pivotSelect.value);
+  const ordered=[...PLANETS.slice(start),...PLANETS.slice(0,start)];
+  ordered.forEach(p=>{
+    if(pivotSelect.value!=="Lagna"&&p==="Lagna")return;
+    const tr=document.createElement("tr");
+    tr.innerHTML=`
+      <td>${p}</td>
+      <td><select data-p="${p}" data-t="sign"><option></option>${SIGNS.map(s=>`<option>${s}</option>`).join("")}</select></td>
+      <td><select data-p="${p}" data-t="deg"><option></option>${[...Array(30).keys()].map(i=>`<option>${i}</option>`).join("")}</select></td>
+      <td id="out_${p}"></td>
+      <td id="degdiff_${p}"></td>
+      <td id="aspect_${p}"></td>`;
     tableBody.appendChild(tr);
   });
 
-  tableBody.querySelectorAll("select").forEach(sel => {
-    const p = sel.dataset.p;
-
-    if (sel.dataset.t === "sign") {
-      sel.value = data[p].sign;
-    } else {
-      sel.value = data[p].degree;
-      sel.classList.toggle("deg-disabled", ignoreDegrees);
-    }
-
-    sel.onchange = () => {
-      if (sel.dataset.t === "sign") data[p].sign = sel.value;
-      else data[p].degree = sel.value;
+  tableBody.querySelectorAll("select").forEach(sel=>{
+    const p=sel.dataset.p;
+    if(sel.dataset.t==="sign")sel.value=data[p].sign;
+    else{sel.value=data[p].degree;sel.classList.toggle("deg-disabled",ignoreDegrees);}
+    sel.onchange=()=>{
+      if(sel.dataset.t==="sign")data[p].sign=sel.value;
+      else data[p].degree=sel.value;
       recalc();
     };
   });
 }
 
-function absDegree(sign, degree) {
-  return SIGNS.indexOf(sign) * 30 + degree;
-}
+function absDegree(s,d){return SIGNS.indexOf(s)*30+d;}
 
-function recalc() {
-  const pivot = pivotSelect.value;
-  const pivotData = data[pivot];
-  if (!pivotData.sign || pivotData.degree === "") {
-    clearOutputs();
-    return;
-  }
+function recalc(){
+  const pivot=pivotSelect.value;
+  if(!data[pivot].sign||data[pivot].degree===""){clearOutputs();return;}
 
-  const pivotAbs = absDegree(pivotData.sign, Number(pivotData.degree));
+  const pivotAbs=absDegree(data[pivot].sign,+data[pivot].degree);
+  const lagnaAbs=data.Lagna.sign
+    ? absDegree(data.Lagna.sign,+data.Lagna.degree)
+    : null;
 
-  PLANETS.forEach(p => {
-    const out = document.getElementById("out_" + p);
-    if (!out) return;
+  PLANETS.forEach(p=>{
+    const out=document.getElementById("out_"+p);
+    const degOut=document.getElementById("degdiff_"+p);
+    const aspOut=document.getElementById("aspect_"+p);
+    if(!out)return;
+    if(!data[p].sign||data[p].degree===""){out.textContent=degOut.textContent=aspOut.textContent="";return;}
 
-    const d = data[p];
-    if (!d.sign) {
-      out.textContent = "";
-      return;
+    const planetAbs=absDegree(data[p].sign,+data[p].degree);
+
+    let rawDiff=planetAbs-pivotAbs;
+    if(rawDiff<0)rawDiff+=360;
+
+    if(reverseCounting){
+      rawDiff=360-rawDiff;
+      if(rawDiff===360)rawDiff=0;
     }
 
-    const usedDegree = ignoreDegrees ? pivotData.degree : d.degree;
-    if (usedDegree === "") {
-      out.textContent = "";
-      return;
+    let displayDiff;
+    if(showRawDegrees){
+      displayDiff=rawDiff;
+    }else if(legacyOppConj){
+      displayDiff=rawDiff>180?rawDiff-180:rawDiff;
+    }else{
+      displayDiff=rawDiff>180?360-rawDiff:rawDiff;
     }
+    degOut.textContent=displayDiff+"°";
 
-    const planetAbs = absDegree(d.sign, Number(usedDegree));
+    currentAspectPlanet=p;
+    aspOut.innerHTML=getAspectLabel(displayDiff,rawDiff,pivot);
 
-    let diff = reverseCounting
+    let houseDiff = reverseCounting
       ? pivotAbs - planetAbs
       : planetAbs - pivotAbs;
+    if(houseDiff<0)houseDiff+=360;
 
-    if (diff < 0) diff += 360;
+    let house=houseSystem==="Vedic"
+      ? Math.floor((houseDiff+15)/30)+1
+      : Math.floor(houseDiff/30)+1;
+    if(house>12)house-=12;
 
-    let house;
-    if (houseSystem === "Vedic") {
-      house = Math.floor((diff + 15) / 30) + 1;
-      if (house > 12) house -= 12;
-    } else {
-      house = Math.floor(diff / 30) + 1;
+    if(pivotRowFromLagna && p===pivot && pivot!=="Lagna" && lagnaAbs!==null){
+      let f=planetAbs-lagnaAbs;
+      if(f<0)f+=360;
+      house=houseSystem==="Vedic"
+        ? Math.floor((f+15)/30)+1
+        : Math.floor(f/30)+1;
+      if(house>12)house-=12;
     }
 
-    out.textContent = house;
+    out.textContent=house;
   });
 }
 
-function clearOutputs() {
-  PLANETS.forEach(p => {
-    const out = document.getElementById("out_" + p);
-    if (out) out.textContent = "";
+function clearOutputs(){
+  PLANETS.forEach(p=>{
+    ["out_","degdiff_","aspect_"].forEach(id=>{
+      const e=document.getElementById(id+p);
+      if(e)e.textContent="";
+    });
   });
 }
 
-pivotSelect.onchange = () => {
-  buildTable();
-  recalc();
-};
-
+pivotSelect.onchange=()=>{buildTable();recalc();};
 buildTable();
 
-/* ======================= EXTRA FEATURES ======================= */
+ignoreDegreesChk.onchange=()=>{ignoreDegrees=ignoreDegreesChk.checked;buildTable();recalc();};
+reverseChk.onchange=()=>{reverseCounting=reverseChk.checked;recalc();};
+legacyOppConjChk.onchange=()=>{legacyOppConj=legacyOppConjChk.checked;recalc();};
+showRawDegreesChk.onchange=()=>{showRawDegrees=showRawDegreesChk.checked;recalc();};
+pivotRowChk.onchange=()=>{pivotRowFromLagna=pivotRowChk.checked;recalc();};
+document.querySelectorAll('input[name="houseSystem"]').forEach(r=>r.onchange=()=>{houseSystem=r.value;recalc();});
 
-ignoreDegreesChk.onchange = () => {
-  ignoreDegrees = ignoreDegreesChk.checked;
-  buildTable();
-  recalc();
+document.getElementById("clearBtn").onclick=()=>{
+  if(!confirm("⚠️ Are you sure you want to clear the entire chart?"))return;
+  PLANETS.forEach(p=>data[p]={sign:"",degree:""});
+  pivotSelect.value="Lagna";
+  legacyOppConj=true; legacyOppConjChk.checked=true;
+  showRawDegrees=false; showRawDegreesChk.checked=false;
+  buildTable(); clearOutputs();
 };
 
-reverseChk.onchange = () => {
-  reverseCounting = reverseChk.checked;
-  recalc();
-};
-
-document.querySelectorAll('input[name="houseSystem"]').forEach(r => {
-  r.onchange = () => {
-    houseSystem = r.value;
-    recalc();
-  };
-});
-
-/* 🔒 CLEAR ALL WITH WARNING */
-document.getElementById("clearBtn").onclick = () => {
-  const confirmClear = confirm(
-    "⚠️ Are you sure you want to clear the entire chart?\n\nThis action cannot be undone."
-  );
-
-  if (!confirmClear) return;
-
-  PLANETS.forEach(p => {
-    data[p].sign = "";
-    data[p].degree = "";
-  });
-
-  buildTable();
-  clearOutputs();
-};
-
-document.getElementById("saveBtn").onclick = () => {
-  const payload = { pivot: pivotSelect.value, ignoreDegrees, reverseCounting, houseSystem, data };
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type:"application/json" });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = "kundali_chart.json";
+document.getElementById("saveBtn").onclick=()=>{
+  const b=new Blob([JSON.stringify({
+    pivot:pivotSelect.value,
+    ignoreDegrees,
+    reverseCounting,
+    legacyOppConj,
+    showRawDegrees,
+    houseSystem,
+    pivotRowFromLagna,
+    data
+  },null,2)],{type:"application/json"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(b);
+  a.download="kundali_chart.json";
   a.click();
 };
 
-document.getElementById("loadBtn").onclick = () => {
-  document.getElementById("fileInput").click();
-};
+document.getElementById("loadBtn").onclick=()=>fileInput.click();
+fileInput.onchange=e=>{
+  const r=new FileReader();
+  r.onload=()=>{
+    const o=JSON.parse(r.result);
+    pivotSelect.value=o.pivot||"Lagna";
+    Object.assign(data,o.data||{});
+    ignoreDegrees=o.ignoreDegrees||false;
+    reverseCounting=o.reverseCounting||false;
+    legacyOppConj=o.legacyOppConj!==false;
+    showRawDegrees=o.showRawDegrees||false;
+    houseSystem=o.houseSystem||"Vedic";
+    pivotRowFromLagna=o.pivotRowFromLagna!==false;
 
-document.getElementById("fileInput").onchange = e => {
-  const file = e.target.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = () => {
-    const obj = JSON.parse(reader.result);
-    pivotSelect.value = obj.pivot;
-    ignoreDegrees = !!obj.ignoreDegrees;
-    reverseCounting = !!obj.reverseCounting;
-    houseSystem = obj.houseSystem || "Vedic";
-    ignoreDegreesChk.checked = ignoreDegrees;
-    reverseChk.checked = reverseCounting;
-    document.querySelector(`input[value="${houseSystem}"]`).checked = true;
-    Object.assign(data, obj.data);
-    buildTable();
-    recalc();
+    ignoreDegreesChk.checked=ignoreDegrees;
+    reverseChk.checked=reverseCounting;
+    legacyOppConjChk.checked=legacyOppConj;
+    showRawDegreesChk.checked=showRawDegrees;
+    pivotRowChk.checked=pivotRowFromLagna;
+    document.querySelector(`input[value="${houseSystem}"]`).checked=true;
+
+    buildTable(); recalc();
   };
-  reader.readAsText(file);
+  r.readAsText(e.target.files[0]);
 };
+</script>
+
+<script>
+const WESTERN_ASPECTS=[
+{d:0,o:8,n:"Conjunction",t:"neutral"},
+{d:18,o:1,n:"Vigintile",t:"good"},
+{d:22.5,o:.5,n:"Semi-Octile",t:"bad"},
+{d:30,o:3,n:"Semi-Sextile",t:"bad"},
+{d:36,o:1,n:"Decile",t:"good"},
+{d:40,o:1,n:"Novile",t:"good"},
+{d:45,o:3,n:"Semi-Square",t:"bad"},
+{d:51.43,o:1.5,n:"Septile",t:"neutral"},
+{d:54,o:1,n:"Tridecile (54°)",t:"good"},
+{d:60,o:5,n:"Sextile",t:"good"},
+{d:67.5,o:1,n:"Sesquile",t:"bad"},
+{d:72,o:2,n:"Quintile",t:"good"},
+{d:80,o:1,n:"Binovile",t:"good"},
+{d:90,o:8,n:"Square",t:"bad"},
+{d:102.86,o:1.5,n:"Biseptile",t:"neutral"},
+{d:105,o:1,n:"Squine",t:"bad"},
+{d:108,o:1,n:"Tridecile",t:"good"},
+{d:120,o:10,n:"Trine",t:"good"},
+{d:135,o:3,n:"Sesquiquadrate",t:"bad"},
+{d:144,o:2,n:"Bi-Quintile",t:"good"},
+{d:150,o:4,n:"Quincunx",t:"bad"},
+{d:154.29,o:1.5,n:"Triseptile",t:"neutral"},
+{d:160,o:1,n:"Quadnovile",t:"neutral"},
+{d:165,o:2,n:"Quindecile",t:"bad"},
+{d:180,o:8,n:"Opposition",t:"neutral"}
+];
+
+function getConjOppClass(p1,p2){
+  const b1=BENEFIC_PLANETS.includes(p1);
+  const b2=BENEFIC_PLANETS.includes(p2);
+  const m1=MALEFIC_PLANETS.includes(p1);
+  const m2=MALEFIC_PLANETS.includes(p2);
+  if(m1&&m2)return "aspect-bad";
+  if(b1&&b2)return "aspect-good";
+  return "aspect-neutral";
+}
+
+function getAspectLabel(diff,rawDiff,pivot){
+  for(const a of WESTERN_ASPECTS){
+    let orb=a.o;
+    if(a.d===0 && diff<=orb){
+      return `<span class="${getConjOppClass(currentAspectPlanet,pivot)}">${a.n}</span>`;
+    }
+    if(a.d===180 && Math.abs(rawDiff-180)<=orb){
+      return `<span class="${getConjOppClass(currentAspectPlanet,pivot)}">${a.n}</span>`;
+    }
+    if(Math.abs(diff-a.d)<=orb){
+      if(a.t==="good")return `<span class="aspect-good">${a.n}</span>`;
+      if(a.t==="bad")return `<span class="aspect-bad">${a.n}</span>`;
+      return `<span class="aspect-neutral">${a.n}</span>`;
+    }
+  }
+  return "";
+}
 </script>
 
 </body>
